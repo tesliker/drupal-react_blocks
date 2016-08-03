@@ -23,9 +23,11 @@ function react_blocks_block_info() {
  * Implements hook_block_view().
  */
 function react_blocks_block_view($delta) {
+  // @todo - use min versions of react for production
 
-  libraries_load('react');
-  drupal_add_js(drupal_get_path('module', 'react_blocks') . "/build/react_blocks.js");
+  drupal_add_js(drupal_get_path('module', 'react_blocks') . "/src/react-15.3.0/build/react.js");
+  drupal_add_js(drupal_get_path('module', 'react_blocks') . "/src/react-15.3.0/build/react-dom.js");
+  drupal_add_js(drupal_get_path('module', 'react_blocks') . "/build/react_blocks.js", array('scope' => 'footer'));
 
   $block = array();
 

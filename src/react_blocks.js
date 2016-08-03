@@ -1,86 +1,91 @@
-/**
- * @file
- * Main JS file for react functionality.
- *
- */
+// Let's create a "real-time search" component
+(function($){
 
-(function ($) {
+var SearchExample = React.createClass({
 
-  Drupal.behaviors.react_blocks = {
-    attach: function (context) {
+    loadSubscriptionData: function(){
+        var self = this;
 
-      // A div with some text in it
-      var CommentBox = React.createClass({
-
-      loadCommentsFromServer: function() {
-        $.ajax({
-          url: this.props.url,
-          dataType: 'json',
-          success: function(data) {
-            this.setState({data: data});
-          }.bind(this),
-          error: function(xhr, status, err) {
-            console.error(this.props.url, status, err.toString());
-          }.bind(this)
+        this.setState({response: undefined});
+        console.log(this.props.url);
+        $.get( this.props.url, function( data ) {
+            self.setState({
+                response: data
+            });
         });
-      },
+    },
 
-      getInitialState: function() {
-        return {data: []};
-      },
+    getInitialState: function(){
+        return { searchString: '', response: undefined };
+    },
 
-      componentDidMount: function() {
-        this.loadCommentsFromServer();
-        setInterval(this.loadCommentsFromServer, this.props.pollInterval);
-      },
+    componentDidMount: function(){
+        this.loadSubscriptionData();
+    },
 
-      render: function() {
-          return (
-            <div className="commentBox">
-              <h3><b>Check them out!</b></h3>
-              <CommentList data={this.state.data} />
-            </div>
-          );
+    handleChange: function(e){
+        // If you comment out this line, the text box will not change its value.
+        // This is because in React, an input cannot change independently of the value
+        // that was assigned to it. In our case this is this.state.searchString.
+        this.setState({searchString:e.target.value});
+    },
+
+    render: function() {
+
+        if ( !this.state.response ) {
+            // Note that you can return false it you want nothing to be put in the dom
+            // This is also your chance to render a spinner or something...
+            return <div>The responsive it not here yet!</div>
         }
-      });
 
-      var CommentList = React.createClass({
-        render: function() {
-          var commentNodes = this.props.data.map(function (comment) {
-            return (
-              <Comment name={comment.name} subject={comment.subject}>
-                {comment.subject}
-              </Comment>
-            );
-          });
-          return (
-            <div className="commentList">
-              {commentNodes}
-            </div>
-          );
+        // Gives you the opportunity to handle the case where the ajax request
+        // completed but the result array is empty
+        if ( this.state.response.length === 0 ) {
+            return <div>No result found for this subscription</div>;
         }
-      });
 
-      var Comment = React.createClass({
-        render: function() {
-          return (
-            <div className="comment">
-              <h2 className="commentAuthor">
-                {this.props.name}
-              </h2>
-              {this.props.subject}
-            </div>
-          );
+        console.log(this.state.response);
+
+        var libraries = this.state.response.data.nodeQuery,
+
+        // var libraries = this.props.items,
+            searchString = this.state.searchString.trim().toLowerCase();
+
+
+        if(searchString.length > 0){
+
+            // We are searching. Filter the results.
+
+            libraries = libraries.filter(function(l){
+                return l.uid.entity.name.toLowerCase().match( searchString );
+            });
+
         }
-      });
 
-      // Render our reactComponent
-      React.render(
-        <CommentBox url="/api/v1/comment.json" pollInterval={2000} />,
-        document.getElementById('recent-comments')
-      );
+        return <div>
+            <input type="text" value={this.state.searchString} onChange={this.handleChange} placeholder="Type here" />
+
+            <ul>
+
+                { libraries.map(function(l){
+                    return <li>{l.title} <a href={'/user/' + l.uid.entity.uid}>{l.uid.entity.name}</a></li>
+                }) }
+
+            </ul>
+
+        </div>;
 
     }
-  }
+});
+
+
+var libraries = [];
+
+// Render the SearchExample component on the page
+
+ReactDOM.render(
+    <SearchExample items={ libraries } url="http://salve:salvedev@degree-finder-7107693.salve.devops.ourdrop.com/salve-resources/degree-finder" />,
+    document.getElementById('recent-comments')
+);
 
 })(jQuery);
