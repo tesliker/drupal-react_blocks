@@ -24,8 +24,9 @@ function react_blocks_block_info() {
  */
 function react_blocks_block_view($delta) {
   // @todo - use min versions of react for production
-
+  drupal_add_css(drupal_get_path('module', 'react_blocks') . "/src/css/react_blocks.css");
   drupal_add_js(drupal_get_path('module', 'react_blocks') . "/src/react-15.3.0/build/react.js");
+  drupal_add_js(drupal_get_path('module', 'react_blocks') . "/src/react-15.3.0/build/react-with-addons.js");
   drupal_add_js(drupal_get_path('module', 'react_blocks') . "/src/react-15.3.0/build/react-dom.js");
   drupal_add_js(drupal_get_path('module', 'react_blocks') . "/build/react_blocks.js", array('scope' => 'footer'));
 
