@@ -6,24 +6,128 @@ var ReactCSSTransitionGroup = React.addons.CSSTransitionGroup;
 var ProgramListing = React.createClass({
 
     getInitialState: function(){
-        return { selectedItem: this.props.selectedItem};
+        return { selectedItem: this.props.selectedItem, programs: undefined, windowWidth: window.innerWidth};
+    },
+
+    handleResize: function(e) {
+        this.setState({windowWidth: window.innerWidth});
+      },
+
+    componentDidMount: function(){
+        this.loadSubscriptionData();
+        window.addEventListener('resize', this.handleResize);
+    },
+
+    columnCount: function(){
+      if (this.state.windowWidth > 900) {
+        return 4;
+      }
+      else if (this.state.windowWidth > 700) {
+        return 3;
+      }
+      else if (this.state.windowWidth > 500) {
+        return 2;
+      }
+      else if (this.state.windowWidth <= 500) {
+        return 1;
+      }
+    },
+
+    columnClasses: function(){
+      return 'column-' + this.columnCount();
+    },
+
+    loadSubscriptionData: function(){
+        var self = this;
+
+        $.get( this.props.url, function( data ) {
+            self.setState({
+                programs: data
+            });
+        });
     },
 
     onItemClick: function (event) {
-
-        this.setState({ selectedItem: event.currentTarget.dataset.id });
-
+        if (event.currentTarget.dataset.id === this.state.selectedItem) {
+          this.setState({ selectedItem: -1 });
+        } else {
+          this.setState({ selectedItem: event.currentTarget.dataset.id });
+        }
     },
 
     render: function() {
+        var programs = this.state.programs;
+        if ( !programs ) {
+            // Note that you can return false it you want nothing to be put in the dom
+            // This is also your chance to render a spinner or something...
+            return <div className="ajax-loader"></div>
+        }
+
+        // Gives you the opportunity to handle the case where the ajax request
+        // completed but the result array is empty
+        if ( programs.length === 0 ) {
+            return <div>No result found.</div>;
+        }
+
         programSearch = programs.programs;
-        if(this.props.search.length > 0){
+        if(this.props.search.length > 0 || this.props.filters !== undefined){
             var self = this;
-            // We are searching. Filter the results.
-            search = this.props.search.trim().toLowerCase();
-            programSearch = programs.programs.filter(function(p){
-                return p.program.title.toLowerCase().match( self.props.search );
-            });
+            var searchString = '';
+            if (this.props.search.length > 0) {
+              // Create the regex search string if not empty
+              search = this.props.search.trim().toLowerCase();
+              searchArray = search.split(" ");
+              for (var i = 0; i < searchArray.length; i++) {
+                searchString += '(?=.*' + searchArray[i] + ')';
+              }
+            }
+            if(this.props.filters !== undefined){
+              // create the regex for filters if they exist
+              var filters = this.props.filters;
+              if (filters['area of study'] !== undefined) {
+                var searchFilterAOS = '';
+                for (var i = 0; i < filters['area of study'].length; i++) {
+                  var re = '(?=.*\\b' + filters['area of study'][i].trim().toLowerCase() + '\\b)';
+                  searchFilterAOS += re;
+                }
+              }
+              if (filters['program type'] !== undefined) {
+                var searchFilterPT = '';
+                for (var i = 0; i < filters['program type'].length; i++) {
+                  searchFilterPT += '(?=.*\\b' + filters['program type'][i].trim().toLowerCase() + '\\b)';
+                }
+              }
+              // Now yhat we have created the regex for the filters, we need to determine which parts of the response we need to search
+              if (filters['area of study'] !== undefined && filters['program type'] !== undefined) {
+                  programSearch = programs.programs.filter(function(p){
+                        var reAOS = new RegExp(searchFilterAOS);
+                        var rePT = new RegExp(searchFilterPT);
+                        var reSearch = new RegExp(searchString);
+                        return p.program['area of study'].toLowerCase().match( reAOS ) && p.program['program type'].toLowerCase().match( rePT ) && (p.program['title'].toLowerCase().match( reSearch ) || p.program['body'].toLowerCase().match( reSearch ));
+                  });                
+              }
+              else if (filters['area of study'] !== undefined && filters['program type'] === undefined) {
+                  programSearch = programs.programs.filter(function(p){
+                        var reAOS = new RegExp(searchFilterAOS);
+                        var reSearch = new RegExp(searchString);
+                        return p.program['area of study'].toLowerCase().match( reAOS ) && (p.program['title'].toLowerCase().match( reSearch ) || p.program['body'].toLowerCase().match( reSearch ));
+                  });                
+              }
+              else if (filters['area of study'] === undefined && filters['program type'] !== undefined) {
+                  programSearch = programs.programs.filter(function(p){
+                        var rePT = new RegExp(searchFilterPT);
+                        var reSearch = new RegExp(searchString);
+                        return p.program['program type'].toLowerCase().match( rePT ) && (p.program['title'].toLowerCase().match( reSearch ) || p.program['body'].toLowerCase().match( reSearch ));
+                  });                
+              }
+              else {
+                // go ahead and always run search on change even if empty string
+                programSearch = programs.programs.filter(function(p){
+                      var reSearch = new RegExp(searchString);
+                      return p.program['title'].toLowerCase().match( reSearch ) || p.program['body'].toLowerCase().match( reSearch );
+                });
+              }
+            }
         }
         var ran = 'no';
         renderPrograms = [];
@@ -32,7 +136,7 @@ var ProgramListing = React.createClass({
         for (var i = 0; i < programSearch.length; i++) {
           var programType = programSearch[i]['program']['program type'].split(', ');
           
-          var programListingClasses = 'program-listing';
+          var programListingClasses = 'program-listing ' + this.columnClasses();
           if (i === parseInt(this.state.selectedItem)) {
             programListingClasses = programListingClasses + ' selected';
           }
@@ -49,27 +153,45 @@ var ProgramListing = React.createClass({
               </div>
              </div>
           );
-          if (((i+1) % 4) === 0) {
+          if (((i+1) % this.columnCount()) === 0) {
             pLength++;
             if (parseInt(this.state.selectedItem) > -1 && parseInt(this.state.selectedItem) <= i && i <= (parseInt(this.state.selectedItem) + 3) && i >= (parseInt(this.state.selectedItem) - 3)) {
               var ran = 'yes';
-              renderPrograms.push(<div key={pLength} className="program-display active" data-display-id={i}>{programSearch[this.state.selectedItem]['program']['title']}</div>);
+              renderPrograms.push(<ProgramDisplay key={pLength} i={i} selectedItem={this.state.selectedItem} programSearch={programSearch} />);
             }
           }
           if (i === programSearch.length - 1 && ran == 'no') {
-            if (renderPrograms[renderPrograms.length - 1]['props']['className'] === 'program-listing') {
-              if (parseInt(this.state.selectedItem) > -1 && parseInt(this.state.selectedItem) <= i && i <= (parseInt(this.state.selectedItem) + 3) && i >= (parseInt(this.state.selectedItem) - 3)) {
-                renderPrograms.push(<div key={pLength + 1} className="program-display active" data-display-id={i + 1}>{programSearch[this.state.selectedItem]['program']['title']}</div>);
-              }
-            }            
+              if (parseInt(this.state.selectedItem) > -1) {
+                renderPrograms.push(<ProgramDisplay key={pLength} i={i} selectedItem={this.state.selectedItem} programSearch={programSearch} />);
+              }           
           }
         }
 
         return (
             <div className="program-listings">
-              <ReactCSSTransitionGroup transitionName="slide" transitionAppear={true} transitionAppearTimeout={800} transitionEnterTimeout={500} transitionLeaveTimeout={500}>
+{/*              <ReactCSSTransitionGroup transitionName="program-display" transitionAppear={true} transitionAppearTimeout={800} transitionEnterTimeout={800} transitionLeaveTimeout={800}>*/}
                  {renderPrograms}
-              </ReactCSSTransitionGroup>
+{/*              </ReactCSSTransitionGroup>*/}
+            </div>
+        );
+    }
+});
+
+var ProgramDisplay = React.createClass({
+    render: function() {
+        var title = this.props.programSearch[this.props.selectedItem]['program']['title'];
+        var image = this.props.programSearch[this.props.selectedItem]['program']['image']['src'];
+        var imageMarkup = image ? <div className="pd-image"><img src={image} /></div> : '';
+        var body = this.props.programSearch[this.props.selectedItem]['program']['body'];
+        return (
+            <div className="program-display active" data-display-id={this.props.i}>
+              <h2 className="pd-title">
+                {title}
+              </h2>
+              {imageMarkup}
+              <div className="pd-body">
+                {body}
+              </div>
             </div>
         );
     }
@@ -77,7 +199,7 @@ var ProgramListing = React.createClass({
 
 var ProgramFilter = React.createClass({
     getInitialState: function(){
-        return { activeTab: 0, search: '', selectedItem: -1};
+        return { activeTab: 0, search: '', selectedItem: -1, filters: {}};
     },
 
     updateSearch: function(event) {
@@ -97,12 +219,58 @@ var ProgramFilter = React.createClass({
         return 'inactive';
       }
     },
+
+    filterChange: function(tab, input){
+      // we need to set the filter state when a filter is changed. This will be determined by array keys
+      var filterSearch = this.state.filters;
+      if (filterTabs[tab] === 'UNDERGRAD/GRAD' || filterTabs[tab] === 'AREA OF STUDY') {
+        if (filterSearch['area of study'] !== undefined) {
+          var index = filterSearch['area of study'].indexOf(filters[tab][input]);
+          if (index > -1) {
+            filterSearch['area of study'].splice(index, 1);
+          } else {
+            filterSearch['area of study'].push(filters[tab][input]);
+          }
+        }
+        else {
+          var arr = [];
+          arr.push(filters[tab][input]);
+          filterSearch["area of study"] = arr;
+        }
+      }
+      if (filterTabs[tab] === 'PROGRAM TYPE') {
+        if (filterSearch['program type'] !== undefined) {
+          var index = filterSearch['program type'].indexOf(filters[tab][input]);
+          if (index > -1) {
+            filterSearch['program type'].splice(index, 1);
+          } else {
+            filterSearch['program type'].push(filters[tab][input]);
+          }
+        }
+        else {
+          var arr = [];
+          arr.push(filters[tab][input]);
+          filterSearch["program type"] = arr;
+        }
+      }
+      this.setState({filters: filterSearch});
+    },
+
+    currentFilters: function(){
+      var currentFilters = [];
+      for (var k in this.state.filters) {
+        for (var key in this.state.filters[k]) {
+          currentFilters.push(this.state.filters[k][key]);
+        }
+      }
+      return currentFilters;
+    },
     
     render: function() {
         var self = this;
         var filterTabsMap = filterTabs.map(function(tab, i){
           if (i == self.state.activeTab) {
-            return <a className="active" href="#" key={i} data-index={i} onClick={self.setActiveTab}>{tab}</a>
+            return <a className="active" key={i} data-index={i} onClick={self.setActiveTab}>{tab}</a>
           } else {
             return <a href="#" key={i} data-index={i} onClick={self.setActiveTab}>{tab}</a>
           }
@@ -111,12 +279,26 @@ var ProgramFilter = React.createClass({
           return  <div key={i} data-index={i} className={self.filterDisplayClass(i)}>
                     {filters[i].map(function(filter, k){
                     return  <div key= {k} className="filter-col">
-                              <input type="checkbox" value={filter} />
+                              <input filter={i} type="checkbox" value={filter} onChange={self.filterChange.bind(null, i, k)} />
                               <label>{filter}</label>
                             </div>
                     })}
                   </div>
         });
+
+        var currentFilters = this.currentFilters();
+        if (currentFilters.length > 0) {
+          currentFilters = currentFilters.map(function(filter, i){
+            return  <div key={i} className="current-filters">
+                      {filter}
+                    </div>
+          });
+        }
+        else {
+          currentFilters = <div className="current-filters">
+                                    All
+                                  </div>
+        }
 
         return (
             <div className="program-filter">
@@ -130,10 +312,10 @@ var ProgramFilter = React.createClass({
                 {filterDisplay}
               </div>
               <div className="filtered-by">
-                Filtered by: ALL
+                Filtered by: {currentFilters}
               </div>
 
-              <ProgramListing search={this.state.search} selectedItem={this.state.selectedItem} />
+              <ProgramListing url="/salve-resources/degree-finder" filters={this.state.filters} search={this.state.search} selectedItem={this.state.selectedItem} />
 
             </div>
         );
@@ -142,8 +324,32 @@ var ProgramFilter = React.createClass({
 
 var filters = [
     ["Undergraduate","Graduate"],
-    ["Bachelor's","Master's"],
-    ["Business","English"],
+    ["Major","Minor", "Continuing Education Certificate", "Degree", "Certificate"],
+    [
+      "Administration of justice",
+      "American studies",
+      "Art and art history",
+      "Biology and biomedical sciences",
+      "Business studies and economics",
+      "Chemistry",
+      "Cultural and historic preservation",
+      "Cultural, environmental and global studies",
+      "Education",
+      "English and communications",
+      "History",
+      "Holistic studies",
+      "Humanities ",
+      "Mathematical sciences",
+      "Modern and classical languages",
+      "Music, theatre and dance",
+      "Nursing",
+      "Philosophy",
+      "Political science and international relations",
+      "Psychology",
+      "Rehabilitation counseling",
+      "Religious and theological studies",
+      "Social work",
+    ],
 ];
 
 var filterTabs = [
@@ -151,79 +357,6 @@ var filterTabs = [
   "PROGRAM TYPE",
   "AREA OF STUDY"
 ];
-
-var programs = {
-"programs": [
-{
-"program": {
-"title": "Ph.D. in Humanities",
-"area of study": "Humanities, Graduate Studies",
-"program type": "                      Degree            "
-}
-},
-{
-"program": {
-"title": "Nursing (RN-BSN)",
-"area of study": "Continuing Education",
-"program type": "                      Continuing Education Certificate            "
-}
-},
-{
-"program": {
-"title": "Minor in Theatre Arts",
-"area of study": "Music, Theatre and Dance, Undergraduate",
-"program type": "                      Minor            "
-}
-},
-{
-"program": {
-"title": "Minor in Studio Art",
-"area of study": "Art and Art History, Undergraduate",
-"program type": "                      Minor            "
-}
-},
-{
-"program": {
-"title": "Minor in Sports Management",
-"area of study": "Business Studies and Economics, Undergraduate",
-"program type": "                      Minor            "
-}
-},
-{
-"program": {
-"title": "Minor in Special Education",
-"area of study": "Education, Undergraduate",
-"program type": "                      Minor            "
-}
-},
-{
-"program": {
-"title": "Minor in Spanish",
-"area of study": "Modern and Classical Languages, Undergraduate",
-"program type": "                      Minor            "
-}
-},
-{
-"program": {
-"title": "Minor in Sociology and Anthropology",
-"area of study": "Sociology and Anthropology, Undergraduate",
-"program type": "                      Minor            "
-}
-},
-{
-"program": {
-"title": "Minor in Secondary Education",
-"area of study": "Education, Undergraduate",
-"program type": "                      Minor            "
-}
-},
-{
-"program": {
-"title": "Minor in Religious and Theological Studies",
-"area of study": "Religious and Theological Studies, Undergraduate",
-"program type": "                      Minor            "
-}
-}]};
 
 // Render the SearchExample component on the page
 
